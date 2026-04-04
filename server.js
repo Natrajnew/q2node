@@ -20,6 +20,7 @@ const Q2Config = {
 
 // --- Helpers ---
 
+// Get Q2 access token using client_credentials
 async function getQ2AccessToken() {
   try {
     const resp = await axios.post(
@@ -77,17 +78,40 @@ async function authenticateQ2(loginName, password, accessToken) {
 
 // --- Controllers ---
 
-// Okta → Node → Q2 round‑trip endpoint (updated for Okta inline-hook payload)
+// Okta → Node → Q2 round‑trip endpoint (updated for Okta inline‑hook payload)
 app.post('/okta-login', async (req, res) => {
   const payload = req.body;
 
-  // Log full body for debugging (optional, but helpful)
+  // Log raw body (helpful)
   console.log('Received Okta inline-hook payload:', payload);
 
-  // Expect Okta format: { data: { credential: { username, password } } }
-  if (!payload || !payload.data || !payload.data.credential) {
-    console.warn('Invalid Okta hook payload format');
-    return res.status(400).json({
+  // NEVER return 400 JSON unless the structure itself is invalid
+  if (!payload || typeof payload !== 'object') {
+    return res.json({
+      commands: [
+        {
+          type: 'com.okta.action.update',
+          value: {
+            credential: 'UNVERIFIED'
+          }
+        }
+      ],
+      error: {
+        errorSummary: 'Inline hook payload not valid JSON.',
+        errorCauses: [
+          {
+            errorSummary: 'Request body must be a valid JSON object.',
+            reason: 'INVALID_JSON',
+            locationType: 'body',
+            location: 'root'
+          }
+        ]
+      }
+    });
+  }
+
+  if (!payload.data || !payload.data.credential) {
+    return res.json({
       commands: [
         {
           type: 'com.okta.action.update',
@@ -100,8 +124,8 @@ app.post('/okta-login', async (req, res) => {
         errorSummary: 'Inline hook payload missing data.credential.',
         errorCauses: [
           {
-            errorSummary: 'Expected Okta inline-hook JSON structure with data.credential.',
-            reason: 'INVALID_PAYLOAD',
+            errorSummary: 'Expected Okta inline-hook JSON with data.credential object.',
+            reason: 'MISSING_CREDENTIAL',
             locationType: 'body',
             location: 'data.credential'
           }
@@ -114,7 +138,7 @@ app.post('/okta-login', async (req, res) => {
   const password = payload.data.credential.password;
 
   if (!username || !password) {
-    return res.status(400).json({
+    return res.json({
       commands: [
         {
           type: 'com.okta.action.update',
@@ -169,10 +193,8 @@ app.post('/okta-login', async (req, res) => {
   try {
     const q2Result = await authenticateQ2(username, password, accessToken);
 
-    // Assume Q2 returns something like { success: true } on success
-    // Adjust this condition based on Q2’s actual response
+    // Adjust this based on Q2’s real response (you can change this block later)
     if (q2Result && q2Result.success !== false) {
-      // Success: tell Okta credentials are VERIFIED
       return res.json({
         commands: [
           {
@@ -184,7 +206,6 @@ app.post('/okta-login', async (req, res) => {
         ]
       });
     } else {
-      // Fail: UNVERIFIED + error
       return res.json({
         commands: [
           {
@@ -198,8 +219,8 @@ app.post('/okta-login', async (req, res) => {
           errorSummary: 'Invalid username or password.',
           errorCauses: [
             {
-              errorSummary: 'Only specific usernames are allowed to log in, or the password is incorrect.',
-              reason: 'INVALID_USERNAME',
+              errorSummary: 'Login credentials were rejected by Q2.',
+              reason: 'INVALID_PASSWORD',
               locationType: 'body',
               location: 'data.credential'
             }

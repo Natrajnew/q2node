@@ -19,7 +19,6 @@ const Q2Config = {
 };
 
 // --- Helpers ---
-
 // Get Q2 access token using client_credentials
 async function getQ2AccessToken() {
   try {
@@ -69,7 +68,7 @@ async function authenticateQ2(loginName, password, accessToken) {
     const data = error.response?.data;
 
     if (status === 401 || status === 403) {
-      return { success: false, error: data };
+      return { success: false, errors: data ? (Array.isArray(data.errors) ? data.errors : []) : [] };
     }
     throw new Error(`Q2 Authenticate failed with status ${status}`);
   }
@@ -77,7 +76,7 @@ async function authenticateQ2(loginName, password, accessToken) {
 
 // --- Controllers ---
 
-// Okta → Node → Q2 round‑trip endpoint (now matches your Okta request body)
+// Okta → Node → Q2 round‑trip endpoint (matches your Okta body: data.context.credential)
 app.post('/okta-login', async (req, res) => {
   const payload = req.body;
 
@@ -167,7 +166,21 @@ app.post('/okta-login', async (req, res) => {
   try {
     const q2Result = await authenticateQ2(username, password, accessToken);
 
-    if (q2Result && q2Result.success !== false) {
+    // Q2 success response:
+    //   success: true
+    //   status: 200
+    //   errors: []
+    //   data: { ... }
+    const isQ2Success =
+      q2Result &&
+      q2Result.success === true &&
+      q2Result.status === 200 &&
+      Array.isArray(q2Result.errors) &&
+      q2Result.errors.length === 0 &&
+      q2Result.data &&
+      q2Result.data.UserLogonID;
+
+    if (isQ2Success) {
       return res.json({
         commands: [
           {
@@ -192,7 +205,7 @@ app.post('/okta-login', async (req, res) => {
           errorSummary: 'Invalid username or password.',
           errorCauses: [
             {
-              errorSummary: 'Login credentials were rejected by Q2.',
+              errorSummary: 'Login credentials were rejected by Q2 or an error occurred.',
               reason: 'INVALID_PASSWORD',
               locationType: 'body',
               location: 'data.context.credential'

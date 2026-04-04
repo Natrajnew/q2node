@@ -52,7 +52,7 @@ async function authenticateQ2(loginName, password, accessToken) {
   try {
     const resp = await axios.post(
       Q2Config.Q2URL,
-      null, // body is empty as per Q2 docs; auth in headers
+      null,
       {
         headers: {
           Authorization: `Bearer ${accessToken}`,
@@ -68,7 +68,6 @@ async function authenticateQ2(loginName, password, accessToken) {
     const status = error.response?.status;
     const data = error.response?.data;
 
-    // You may need to adjust this based on Q2’s actual error shape
     if (status === 401 || status === 403) {
       return { success: false, error: data };
     }
@@ -78,15 +77,14 @@ async function authenticateQ2(loginName, password, accessToken) {
 
 // --- Controllers ---
 
-// Okta → Node → Q2 round‑trip endpoint (updated for Okta inline‑hook payload)
+// Okta → Node → Q2 round‑trip endpoint (now matches your Okta request body)
 app.post('/okta-login', async (req, res) => {
   const payload = req.body;
 
-  // Log raw body (helpful)
-  console.log('Received Okta inline-hook payload:', payload);
+  console.log('Received Okta hook payload:', payload);
 
-  // NEVER return 400 JSON unless the structure itself is invalid
-  if (!payload || typeof payload !== 'object') {
+  // Expect: { data: { context: { credential: { username, password } } } }
+  if (!payload || !payload.data || !payload.data.context || !payload.data.context.credential) {
     return res.json({
       commands: [
         {
@@ -97,45 +95,21 @@ app.post('/okta-login', async (req, res) => {
         }
       ],
       error: {
-        errorSummary: 'Inline hook payload not valid JSON.',
+        errorSummary: 'Inline hook payload missing data.context.credential.',
         errorCauses: [
           {
-            errorSummary: 'Request body must be a valid JSON object.',
-            reason: 'INVALID_JSON',
-            locationType: 'body',
-            location: 'root'
-          }
-        ]
-      }
-    });
-  }
-
-  if (!payload.data || !payload.data.credential) {
-    return res.json({
-      commands: [
-        {
-          type: 'com.okta.action.update',
-          value: {
-            credential: 'UNVERIFIED'
-          }
-        }
-      ],
-      error: {
-        errorSummary: 'Inline hook payload missing data.credential.',
-        errorCauses: [
-          {
-            errorSummary: 'Expected Okta inline-hook JSON with data.credential object.',
+            errorSummary: 'Expected Okta inline-hook JSON with data.context.credential.',
             reason: 'MISSING_CREDENTIAL',
             locationType: 'body',
-            location: 'data.credential'
+            location: 'data.context.credential'
           }
         ]
       }
     });
   }
 
-  const username = payload.data.credential.username;
-  const password = payload.data.credential.password;
+  const username = payload.data.context.credential.username;
+  const password = payload.data.context.credential.password;
 
   if (!username || !password) {
     return res.json({
@@ -154,7 +128,7 @@ app.post('/okta-login', async (req, res) => {
             errorSummary: 'Inline hook payload did not contain valid credential.username or credential.password.',
             reason: 'MISSING_CREDENTIAL',
             locationType: 'body',
-            location: 'data.credential'
+            location: 'data.context.credential'
           }
         ]
       }
@@ -183,7 +157,7 @@ app.post('/okta-login', async (req, res) => {
             errorSummary: err.message,
             reason: 'INTERNAL_ERROR',
             locationType: 'body',
-            location: 'data.credential'
+            location: 'data.context.credential'
           }
         ]
       }
@@ -193,7 +167,6 @@ app.post('/okta-login', async (req, res) => {
   try {
     const q2Result = await authenticateQ2(username, password, accessToken);
 
-    // Adjust this based on Q2’s real response (you can change this block later)
     if (q2Result && q2Result.success !== false) {
       return res.json({
         commands: [
@@ -222,7 +195,7 @@ app.post('/okta-login', async (req, res) => {
               errorSummary: 'Login credentials were rejected by Q2.',
               reason: 'INVALID_PASSWORD',
               locationType: 'body',
-              location: 'data.credential'
+              location: 'data.context.credential'
             }
           ]
         }
@@ -246,7 +219,7 @@ app.post('/okta-login', async (req, res) => {
             errorSummary: err.message,
             reason: 'Q2_AUTH_FAILED',
             locationType: 'body',
-            location: 'data.credential'
+            location: 'data.context.credential'
           }
         ]
       }
@@ -254,12 +227,12 @@ app.post('/okta-login', async (req, res) => {
   }
 });
 
-// Simple health check
+// Health check
 app.get('/health', (req, res) => {
   res.json({ status: 'ok', service: 'Q2 ↔ Okta round‑trip' });
 });
 
 app.listen(PORT, () => {
   console.log(`Q2 ↔ Okta round‑trip service running on port ${PORT}`);
-  console.log('Endpoint: POST /okta-login (expects Okta inline-hook JSON with data.credential)');
+  console.log('Endpoint: POST /okta-login (expects Okta body with data.context.credential)');
 });

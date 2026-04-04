@@ -20,7 +20,6 @@ const Q2Config = {
 
 // --- Helpers ---
 
-// Get Q2 access token using client_credentials
 async function getQ2AccessToken() {
   try {
     const resp = await axios.post(
@@ -78,13 +77,63 @@ async function authenticateQ2(loginName, password, accessToken) {
 
 // --- Controllers ---
 
-// Okta → Node → Q2 round‑trip endpoint
+// Okta → Node → Q2 round‑trip endpoint (updated for Okta inline-hook payload)
 app.post('/okta-login', async (req, res) => {
-  const { username, password } = req.body;
+  const payload = req.body;
+
+  // Log full body for debugging (optional, but helpful)
+  console.log('Received Okta inline-hook payload:', payload);
+
+  // Expect Okta format: { data: { credential: { username, password } } }
+  if (!payload || !payload.data || !payload.data.credential) {
+    console.warn('Invalid Okta hook payload format');
+    return res.status(400).json({
+      commands: [
+        {
+          type: 'com.okta.action.update',
+          value: {
+            credential: 'UNVERIFIED'
+          }
+        }
+      ],
+      error: {
+        errorSummary: 'Inline hook payload missing data.credential.',
+        errorCauses: [
+          {
+            errorSummary: 'Expected Okta inline-hook JSON structure with data.credential.',
+            reason: 'INVALID_PAYLOAD',
+            locationType: 'body',
+            location: 'data.credential'
+          }
+        ]
+      }
+    });
+  }
+
+  const username = payload.data.credential.username;
+  const password = payload.data.credential.password;
 
   if (!username || !password) {
     return res.status(400).json({
-      error: 'Missing username or password'
+      commands: [
+        {
+          type: 'com.okta.action.update',
+          value: {
+            credential: 'UNVERIFIED'
+          }
+        }
+      ],
+      error: {
+        errorSummary: 'Missing username or password.',
+        errorCauses: [
+          {
+            errorSummary: 'Inline hook payload did not contain valid credential.username or credential.password.',
+            reason: 'MISSING_CREDENTIAL',
+            locationType: 'body',
+            location: 'data.credential'
+          }
+        ]
+      }
     });
   }
 
@@ -94,7 +143,7 @@ app.post('/okta-login', async (req, res) => {
   try {
     accessToken = await getQ2AccessToken();
   } catch (err) {
-    return res.status(500).json({
+    return res.json({
       commands: [
         {
           type: 'com.okta.action.update',
@@ -191,5 +240,5 @@ app.get('/health', (req, res) => {
 
 app.listen(PORT, () => {
   console.log(`Q2 ↔ Okta round‑trip service running on port ${PORT}`);
-  console.log('Endpoint: POST /okta-login (expects {"username":"...","password":"..."})');
+  console.log('Endpoint: POST /okta-login (expects Okta inline-hook JSON with data.credential)');
 });

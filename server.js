@@ -1,21 +1,19 @@
 const express = require('express');
 const axios = require('axios');
-
+require('dotenv').config();
 const app = express();
 
 const PORT = process.env.PORT || 3000;
 
 app.use(express.json());
 
-// --- Config from Q2 (use environment or hard‑code) ---
-
 const Q2Config = {
-  Q2ClientId: process.env.Q2_CLIENT_ID || 'eaf9d7bc-2fc4-4585-9bea-4780233aa1a5',
-  Q2ClientSecret: process.env.Q2_CLIENT_SECRET || 'de6b0ee80ca29062ec89d843f6308c97',
-  Q2GrantType: process.env.Q2_GRANT_TYPE || 'client_credentials',
-  Q2Scope: process.env.Q2_SCOPE || 'CaliperAPI:UsageToken:bankofhope CaliperAPI:Enrollment CaliperAPI:Authenticate CaliperAPI:GetGroups Environment:Staging:NonProd_3424_01_Test_01__',
-  Q2TokenURL: process.env.Q2_TOKEN_URL || 'https://q2developer.com/oauth2/token',
-  Q2URL: process.env.Q2_URL || 'https://stage.q2api.com/v2/Authenticate'
+  Q2ClientId: process.env.Q2_CLIENT_ID || '',
+  Q2ClientSecret: process.env.Q2_CLIENT_SECRET || '',
+  Q2GrantType: process.env.Q2_GRANT_TYPE || '',
+  Q2Scope: process.env.Q2_SCOPE || '',
+  Q2TokenURL: process.env.Q2_TOKEN_URL || '',
+  Q2URL: process.env.Q2_URL || ''
 };
 
 // --- Helpers ---

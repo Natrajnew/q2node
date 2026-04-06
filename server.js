@@ -1,29 +1,24 @@
 const express = require('express');
 const axios = require('axios');
 
-// Only used if you ever use a local .env; on Render, env vars come from platform
 require('dotenv').config();
 
 const app = express();
 
 const PORT = process.env.PORT || 3000;
 
-// Parse JSON body; if malformed, Express may return 400 before hitting the route
 app.use(express.json({ type: ['application/json', 'text/plain'] }));
 
-// --- Q2 Configuration ---
 const Q2Config = {
   Q2ClientId: process.env.Q2_CLIENT_ID || '',
   Q2ClientSecret: process.env.Q2_CLIENT_SECRET || '',
-  Q2GrantType: process.env.Q2_GRANT_TYPE || 'client_credentials',
-  Q2Scope: process.env.Q2_SCOPE || 'CaliperAPI:UsageToken:bankofhope CaliperAPI:Enrollment CaliperAPI:Authenticate CaliperAPI:GetGroups Environment:Staging:NonProd_3424_01_Test_01__',
-  Q2TokenURL: process.env.Q2_TOKEN_URL || 'https://q2developer.com/oauth2/token',
-  Q2URL: process.env.Q2_URL || 'https://stage.q2api.com/v2/Authenticate'
+  Q2GrantType: process.env.Q2_GRANT_TYPE || '',
+  Q2Scope: process.env.Q2_SCOPE || '',
+  Q2TokenURL: process.env.Q2_TOKEN_URL || '',
+  Q2URL: process.env.Q2_URL || ''
 };
 
-// --- Helpers ---
 
-// Get Q2 access token using client_credentials
 async function getQ2AccessToken() {
   try {
     const resp = await axios.post(
@@ -81,15 +76,11 @@ async function authenticateQ2(loginName, password, accessToken) {
   }
 }
 
-// --- Controllers ---
-
-// Okta → Node → Q2 round‑trip endpoint (matches your Okta body: data.context.credential)
 app.post('/okta-login', async (req, res) => {
   const payload = req.body;
 
   console.log('Received Okta hook payload:', payload);
 
-  // Default: treat as UNVERIFIED, then try to validate
   let result = {
     commands: [
       {
@@ -112,7 +103,6 @@ app.post('/okta-login', async (req, res) => {
     }
   };
 
-  // Parse user + password from the payload
   const username = payload?.data?.context?.credential?.username;
   const password = payload?.data?.context?.credential?.password;
 
@@ -136,11 +126,6 @@ app.post('/okta-login', async (req, res) => {
   try {
     const q2Result = await authenticateQ2(username, password, accessToken);
 
-    // Q2 success response:
-    //   success: true
-    //   status: 200
-    //   errors: []
-    //   data: { ... }
     const isQ2Success =
       q2Result &&
       q2Result.success === true &&
@@ -151,7 +136,7 @@ app.post('/okta-login', async (req, res) => {
       q2Result.data.UserLogonID;
 
     if (isQ2Success) {
-      // Success: tell Okta credentials are VERIFIED
+
       return res.json({
         commands: [
           {
@@ -170,13 +155,13 @@ app.post('/okta-login', async (req, res) => {
         q2Result.errors.some(err => err.code === 50002);
 
       if (isPasswordError) {
-        // User exists, password wrong
+
         result.commands[0].value.credential = 'UNVERIFIED';
         result.error.errorSummary = 'Invalid username or password.';
         result.error.errorCauses[0].errorSummary = 'Password is not valid for the given user.';
         result.error.errorCauses[0].reason = 'INVALID_PASSWORD';
       } else {
-        // Generic login failure (user not found, etc.)
+
         result.commands[0].value.credential = 'UNVERIFIED';
         result.error.errorSummary = 'Invalid username or password.';
         result.error.errorCauses[0].errorSummary =
@@ -196,7 +181,6 @@ app.post('/okta-login', async (req, res) => {
   }
 });
 
-// Health check
 app.get('/health', (req, res) => {
   res.json({ status: 'ok', service: 'Q2 ↔ Okta round‑trip' });
 });
